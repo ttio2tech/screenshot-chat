@@ -65,6 +65,7 @@ jobs:
         run: |
           wails build
           mv build/bin/*.app build/bin/${{ matrix.name }}.app
+          cd build/bin && zip -r ${{ matrix.name }}.zip ${{ matrix.name }}.app
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -89,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: build/bin/${{ matrix.name }}.app
+          path: build/bin/${{ matrix.name }}.zip
 
   release:
     needs: build
