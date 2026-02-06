@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -91,36 +90,23 @@ type OllamaChatResponse struct {
 
 // --- Methods (all exported = bound to frontend) ---
 
-// TakeScreenshot captures a screenshot using scrot
+// TakeScreenshot captures a screenshot using the platform-native tool.
 // mode: "full", "selection", "focused"
 func (a *App) TakeScreenshot(mode string) ScreenshotResult {
 	timestamp := time.Now().Format("2006-01-02_150405")
 	filename := fmt.Sprintf("screenshot_%s_%s.png", timestamp, mode)
 	savePath := filepath.Join(a.screenshotDir, filename)
 
-	var args []string
-	hideWindow := false
-
-	switch mode {
-	case "full":
-		args = []string{"--silent", "--overwrite", savePath}
-		hideWindow = true
-	case "selection":
-		args = []string{"--select", "--freeze", "--silent", "--overwrite", savePath}
-	case "focused":
-		args = []string{"--focused", "--silent", "--overwrite", savePath}
-		hideWindow = true
-	default:
-		return ScreenshotResult{Success: false, Error: "Invalid mode. Use: full, selection, focused"}
-	}
+	// Peek at whether this mode requires hiding the window, without actually
+	// capturing yet — captureScreenshot returns hideWindow as its first value.
+	hideWindow := mode == "full" || mode == "focused"
 
 	if hideWindow {
 		wailsRuntime.WindowHide(a.ctx)
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	cmd := exec.Command("scrot", args...)
-	output, err := cmd.CombinedOutput()
+	_, err := captureScreenshot(mode, savePath)
 
 	if hideWindow {
 		time.Sleep(100 * time.Millisecond)
@@ -128,7 +114,7 @@ func (a *App) TakeScreenshot(mode string) ScreenshotResult {
 	}
 
 	if err != nil {
-		return ScreenshotResult{Success: false, Error: fmt.Sprintf("scrot failed: %v - %s", err, string(output))}
+		return ScreenshotResult{Success: false, Error: err.Error()}
 	}
 
 	return ScreenshotResult{FilePath: savePath, FileName: filename, Success: true}
