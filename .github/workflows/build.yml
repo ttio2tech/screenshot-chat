@@ -62,7 +62,9 @@ jobs:
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
-        run: wails build -o ${{ matrix.name }}
+        run: |
+          wails build
+          mv build/bin/*.app build/bin/${{ matrix.name }}.app
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
