@@ -65,6 +65,71 @@ jobs:
         run: |
           wails build
           mv build/bin/*.app build/bin/${{ matrix.name }}.app
+
+      - name: Import Code Signing Certificate (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Decode certificate
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Import certificate into keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Clean up certificate file
+          rm certificate.p12
+
+      - name: Sign Application (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          codesign --deep --force --options runtime \
+            --sign "$MACOS_SIGNING_IDENTITY" \
+            --timestamp \
+            build/bin/${{ matrix.name }}.app
+
+          # Verify signing
+          codesign --verify --verbose build/bin/${{ matrix.name }}.app
+
+      - name: Notarize Application (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Create a zip for notarization
+          cd build/bin
+          zip -r ${{ matrix.name }}-notarize.zip ${{ matrix.name }}.app
+
+          # Submit for notarization
+          xcrun notarytool submit ${{ matrix.name }}-notarize.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # Staple the notarization ticket to the app
+          xcrun stapler staple ${{ matrix.name }}.app
+
+          # Clean up temp zip
+          rm ${{ matrix.name }}-notarize.zip
+
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        run: |
           cd build/bin && zip -r ${{ matrix.name }}.zip ${{ matrix.name }}.app
 
       - name: Build (Windows)
